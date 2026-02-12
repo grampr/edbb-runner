@@ -10,23 +10,66 @@ param(
 # UTF-8エンコーディング設定
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
+# Python実行情報
+$script:PythonExecutable = $null
+$script:PythonBaseArgs = @()
+
 # ============================================
 # 関数定義
 # ============================================
 
-# Pythonが使えるかチェックする関数（Windowsストアのダミー回避）
-function Test-PythonInstalled {
+# Python実行コマンドを解決する関数（Windowsストアのダミー回避）
+function Resolve-PythonCommand {
     try {
         # Windowsストアが開くだけの「python」コマンドを無視するため--versionを指定
-        $version = python --version 2>&1
+        $version = & python --version 2>&1
         if ($LASTEXITCODE -eq 0 -and $version -match "Python") {
+            $script:PythonExecutable = "python"
+            $script:PythonBaseArgs = @()
             return $true
         }
     }
     catch {
-        return $false
+        # fallbackに進む
     }
+
+    try {
+        # pythonコマンドが使えない環境ではpyランチャーを試す
+        $version = & py -3 --version 2>&1
+        if ($LASTEXITCODE -eq 0 -and $version -match "Python") {
+            $script:PythonExecutable = "py"
+            $script:PythonBaseArgs = @("-3")
+            return $true
+        }
+    }
+    catch {
+        # 何もしない
+    }
+
+    $script:PythonExecutable = $null
+    $script:PythonBaseArgs = @()
     return $false
+}
+
+# Pythonが使えるかチェックする関数
+function Test-PythonInstalled {
+    return Resolve-PythonCommand
+}
+
+# 解決済みコマンドでPythonを実行する関数
+function Invoke-Python {
+    param(
+        [Parameter(ValueFromRemainingArguments = $true)]
+        [string[]]$Arguments
+    )
+
+    if (-not $script:PythonExecutable) {
+        if (-not (Resolve-PythonCommand)) {
+            throw "Python command is not available."
+        }
+    }
+
+    & $script:PythonExecutable @($script:PythonBaseArgs + $Arguments)
 }
 
 # ============================================
@@ -49,13 +92,7 @@ else {
     Write-Host "[1/3] Python: wingetを使用してPython 3.12をインストールします..." -ForegroundColor Gray
 
     winget install Python.Python.3.12 --accept-package-agreements --accept-source-agreements
-
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "[1/3] Python: エラー - Pythonのインストールに失敗しました" -ForegroundColor Red
-        Write-Host "[1/3] Python: 手動で https://www.python.org/downloads/ からインストールしてください" -ForegroundColor Gray
-        Read-Host "Enterキーを押して終了"
-        exit 1
-    }
+    $wingetExitCode = $LASTEXITCODE
 
     Write-Host "[1/3] Python: インストール完了、環境変数を更新中..." -ForegroundColor Gray
 
@@ -64,6 +101,13 @@ else {
 
     # Pythonが使えるか再確認
     if (-not (Test-PythonInstalled)) {
+        if ($wingetExitCode -ne 0) {
+            Write-Host "[1/3] Python: エラー - wingetでの処理に失敗し、Pythonコマンドも利用できません" -ForegroundColor Red
+            Write-Host "[1/3] Python: 手動で https://www.python.org/downloads/ からインストールしてください" -ForegroundColor Gray
+            Read-Host "Enterキーを押して終了"
+            exit 1
+        }
+
         Write-Host "[1/3] Python: 環境変数の更新に時間がかかっています" -ForegroundColor Yellow
         Write-Host "[1/3] Python: このウィンドウを閉じて、再度start.batを実行してください" -ForegroundColor Gray
         Read-Host "Enterキーを押して終了"
@@ -78,7 +122,7 @@ else {
 # ============================================
 if (-not (Test-Path "venv")) {
     Write-Host "[2/3] venv: 作成中..." -ForegroundColor Yellow
-    python -m venv venv --upgrade-deps
+    Invoke-Python -m venv venv --upgrade-deps
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[2/3] venv: エラー - 仮想環境の作成に失敗しました" -ForegroundColor Red
@@ -96,7 +140,7 @@ Write-Host "[2/3] venv: アクティベート済み" -ForegroundColor Green
 # ============================================
 # [3/3] パッケージのインストール確認
 # ============================================
-$null = python -c "import discord" 2>&1
+$null = Invoke-Python -c "import discord" 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[3/3] discord.py: インストール中..." -ForegroundColor Yellow
     pip install discord.py[voice] --quiet
@@ -188,7 +232,7 @@ if (Test-Path ".env") {
 
 # -dev引数がある場合はHTTPサーバー付きで起動、ない場合はbot.pyのみ起動
 if ($dev) {
-    python edbb-runner.py
+    Invoke-Python edbb-runner.py
 }
 else {
     Write-Host ""
@@ -196,5 +240,5 @@ else {
     Write-Host "🤖 BOT起動"
     Write-Host "=================================================="
     Write-Host ""
-    python bot.py
+    Invoke-Python bot.py
 }
