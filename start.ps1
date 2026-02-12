@@ -104,6 +104,63 @@ else {
 Write-Host ""
 
 # ============================================
+# Discord BOTトークンの確認
+# ============================================
+
+# .envファイルが存在しない、またはトークンが未設定の場合
+$needsToken = $false
+if (-not (Test-Path ".env")) {
+    $needsToken = $true
+}
+else {
+    $envContent = Get-Content ".env" -Raw -ErrorAction SilentlyContinue
+    if (-not ($envContent -match "DISCORD_TOKEN=.+")) {
+        $needsToken = $true
+    }
+}
+
+if ($needsToken) {
+    Write-Host "Discord BOTトークンを入力してください:" -ForegroundColor Yellow
+    Write-Host "(Discord Developer Portalで取得したトークン)" -ForegroundColor Gray
+    Write-Host ""
+
+    # トークンが有効になるまでループ
+    $validToken = $false
+    while (-not $validToken) {
+        $botToken = Read-Host "トークン"
+
+        if (-not $botToken) {
+            Write-Host "× トークンを入力してください" -ForegroundColor Red
+            Write-Host ""
+            continue
+        }
+
+        # Discord APIでトークンの有効性を確認
+        Write-Host "トークンを検証中..." -ForegroundColor Gray
+        try {
+            $headers = @{
+                "Authorization" = "Bot $botToken"
+            }
+            $response = Invoke-RestMethod -Uri "https://discord.com/api/v10/users/@me" -Headers $headers -Method Get -ErrorAction Stop
+
+            # トークンが有効
+            Write-Host "✓ トークンが有効です (BOT: $($response.username)#$($response.discriminator))" -ForegroundColor Green
+
+            # .envファイルに保存
+            "DISCORD_TOKEN=$botToken" | Out-File -FilePath ".env" -Encoding utf8
+            Write-Host "✓ トークンを保存しました" -ForegroundColor Green
+            $validToken = $true
+        }
+        catch {
+            # トークンが無効
+            Write-Host "× トークンが無効です。再度入力してください" -ForegroundColor Red
+            Write-Host ""
+        }
+    }
+    Write-Host ""
+}
+
+# ============================================
 # start.py起動
 # ============================================
 

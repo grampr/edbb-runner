@@ -64,13 +64,6 @@ class BotHandler(BaseHTTPRequestHandler):
             with open('bot.py', 'w', encoding='utf-8') as f:
                 f.write(bot_code)
 
-            # Botトークンをヘッダーから取得
-            bot_token = self.headers.get('X-Bot-Token', '')
-            if bot_token:
-                # .envファイルに保存
-                with open('.env', 'w', encoding='utf-8') as f:
-                    f.write(f'DISCORD_TOKEN={bot_token}\n')
-
             # bot.pyを起動
             start_bot()
 
