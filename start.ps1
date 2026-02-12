@@ -1,0 +1,110 @@
+﻿# ============================================
+# EDBB.bat - 自動セットアップスクリプト
+# ============================================
+
+# UTF-8エンコーディング設定
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+# ============================================
+# 関数定義
+# ============================================
+
+# Pythonが使えるかチェックする関数（Windowsストアのダミー回避）
+function Test-PythonInstalled {
+    try {
+        # Windowsストアが開くだけの「python」コマンドを無視するため--versionを指定
+        $version = python --version 2>&1
+        if ($LASTEXITCODE -eq 0 -and $version -match "Python") {
+            return $true
+        }
+    }
+    catch {
+        return $false
+    }
+    return $false
+}
+
+# ============================================
+# ヘッダー表示
+# ============================================
+
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "EDBB.bat v1.0.0" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host ""
+
+# ============================================
+# [1/3] Python環境の確認とインストール
+# ============================================
+if (Test-PythonInstalled) {
+    Write-Host "[1/3] Python: インストール済み" -ForegroundColor Green
+}
+else {
+    Write-Host "[1/3] Python: インストール中..." -ForegroundColor Yellow
+    Write-Host "[1/3] Python: wingetを使用してPython 3.12をインストールします..." -ForegroundColor Gray
+
+    winget install Python.Python.3.12 --accept-package-agreements --accept-source-agreements
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[1/3] Python: エラー - Pythonのインストールに失敗しました" -ForegroundColor Red
+        Write-Host "[1/3] Python: 手動で https://www.python.org/downloads/ からインストールしてください" -ForegroundColor Gray
+        Read-Host "Enterキーを押して終了"
+        exit 1
+    }
+
+    Write-Host "[1/3] Python: インストール完了、環境変数を更新中..." -ForegroundColor Gray
+
+    # 環境変数を再読み込み
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+
+    # Pythonが使えるか再確認
+    if (-not (Test-PythonInstalled)) {
+        Write-Host "[1/3] Python: 環境変数の更新に時間がかかっています" -ForegroundColor Yellow
+        Write-Host "[1/3] Python: このウィンドウを閉じて、再度start.batを実行してください" -ForegroundColor Gray
+        Read-Host "Enterキーを押して終了"
+        exit 0
+    }
+
+    Write-Host "[1/3] Python: 完了" -ForegroundColor Green
+}
+
+# ============================================
+# [2/3] 仮想環境の作成とアクティベート
+# ============================================
+if (-not (Test-Path "venv")) {
+    Write-Host "[2/3] venv: 作成中..." -ForegroundColor Yellow
+    python -m venv venv --upgrade-deps
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[2/3] venv: エラー - 仮想環境の作成に失敗しました" -ForegroundColor Red
+        Read-Host "Enterキーを押して終了"
+        exit 1
+    }
+
+    Write-Host "[2/3] venv: 作成完了" -ForegroundColor Green
+}
+
+# 仮想環境をアクティベート
+& "venv\Scripts\Activate.ps1"
+Write-Host "[2/3] venv: アクティベート済み" -ForegroundColor Green
+
+# ============================================
+# [3/3] パッケージのインストール確認
+# ============================================
+$null = python -c "import discord" 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[3/3] discord.py: インストール中..." -ForegroundColor Yellow
+    pip install discord.py[voice] python-dotenv --quiet
+    Write-Host "[3/3] discord.py: 完了" -ForegroundColor Green
+}
+else {
+    Write-Host "[3/3] discord.py: インストール済み" -ForegroundColor Green
+}
+
+Write-Host ""
+
+# ============================================
+# start.py起動
+# ============================================
+
+python start.py
